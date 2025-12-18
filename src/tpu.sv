@@ -1,185 +1,331 @@
-`timescale 1ns/1ps
-`default_nettype none
-
-module tpu #(
-    parameter int SYSTOLIC_ARRAY_WIDTH = 2
-)(
-    input logic clk,
-    input logic rst,
-
-    // UB wires (writing from host to UB)
-    input logic [15:0] ub_wr_host_data_in [0:SYSTOLIC_ARRAY_WIDTH-1],
-    input logic ub_wr_host_valid_in [0:SYSTOLIC_ARRAY_WIDTH-1],
-
-    // UB wires (inputting reading instructions from host)
-    input logic ub_rd_start_in,
-    input logic ub_rd_transpose,
-    input logic [8:0] ub_ptr_select,
-    input logic [15:0] ub_rd_addr_in,
-    input logic [15:0] ub_rd_row_size,
-    input logic [15:0] ub_rd_col_size,
-
-    // Learning rate
-    input logic [15:0] learning_rate_in,
-
-    // VPU data pathway
-    input logic [3:0] vpu_data_pathway,
-
-    input logic sys_switch_in,
-    input logic [15:0] vpu_leak_factor_in,
-    input logic [15:0] inv_batch_size_times_two_in
+module tpu (
+    // 时钟和复位
+    input  logic        clk,
+    input  logic        rst,
+    
+    // ==================== AXI接口 ====================
+    input  logic        axi_req,
+    input  logic        axi_we,
+    input  logic [63:0] axi_addr,
+    input  logic [63:0] axi_wdata,
+    output logic [63:0] axi_rdata
 );
-    // UB internal output wires
-    logic [15:0] ub_wr_data_in [0:SYSTOLIC_ARRAY_WIDTH-1];
-    logic ub_wr_valid_in [0:SYSTOLIC_ARRAY_WIDTH-1];
 
-    // Number of columns in the matrix to send to systolic array to disable columns of PEs
-    logic [15:0] ub_rd_col_size_out;
-    logic ub_rd_col_size_valid_out;
+logic        axi_icache_en;
+logic        axi_icache_we;
+logic [15:0] axi_icache_addr;
+logic [63:0] axi_icache_wdata;
+logic [63:0] axi_icache_rdata;
+
+logic        axi_ubuf_en;
+logic        axi_ubuf_we;
+logic [15:0] axi_ubuf_addr;
+logic [63:0] axi_ubuf_wdata;
+logic [63:0] axi_ubuf_rdata;
+
+logic        axi_status_en;
+logic        axi_status_we;
+logic [15:0] axi_status_addr;
+logic [63:0] axi_status_wdata;
+logic [63:0] axi_status_rdata;
+
+axi_interface u_axi_interface (
+    .clk    (clk),
+    .rst    (rst),
+
+    // AXI Interface
+    .axi_req    (axi_req  ),
+    .axi_we     (axi_we   ),
+    .axi_addr   (axi_addr ),
+    .axi_wdata  (axi_wdata),
+    .axi_rdata  (axi_rdata),
     
-    // Array wires for connection to unified_buffer
-    logic [15:0] ub_rd_input_data_out_0;
-    logic [15:0] ub_rd_input_data_out_1;
-    logic ub_rd_input_valid_out_0;
-    logic ub_rd_input_valid_out_1;
-
-    logic [15:0] ub_rd_weight_data_out_0;
-    logic [15:0] ub_rd_weight_data_out_1;
-    logic ub_rd_weight_valid_out_0;
-    logic ub_rd_weight_valid_out_1;
-
-    logic [15:0] ub_rd_bias_data_out_0;
-    logic [15:0] ub_rd_bias_data_out_1;
+    // 内部接口
+    .icache_en      (axi_icache_en   ),
+    .icache_we      (axi_icache_we   ),
+    .icache_addr    (axi_icache_addr ),
+    .icache_wdata   (axi_icache_wdata),
+    .icache_rdata   (axi_icache_rdata),
     
-    logic [15:0] ub_rd_Y_data_out_0;
-    logic [15:0] ub_rd_Y_data_out_1;
-
-    logic [15:0] ub_rd_H_data_out_0;
-    logic [15:0] ub_rd_H_data_out_1;
-
-    // Systolic array internal output wires
-    logic [15:0] sys_data_out_21;
-    logic [15:0] sys_data_out_22;
-    logic sys_valid_out_21;
-    logic sys_valid_out_22;
-
-    // VPU internal output wires
-    logic [15:0] vpu_data_out_1;
-    logic [15:0] vpu_data_out_2;
-    logic vpu_valid_out_1;
-    logic vpu_valid_out_2;
-
-    assign ub_wr_data_in[0] = vpu_data_out_1;
-    assign ub_wr_data_in[1] = vpu_data_out_2;
-    assign ub_wr_valid_in[0] = vpu_valid_out_1;
-    assign ub_wr_valid_in[1] = vpu_valid_out_2;
+    .ubuf_en        (axi_ubuf_en     ),
+    .ubuf_we        (axi_ubuf_we     ),
+    .ubuf_addr      (axi_ubuf_addr   ),
+    .ubuf_wdata     (axi_ubuf_wdata  ),
+    .ubuf_rdata     (axi_ubuf_rdata  ),
     
-    unified_buffer #(
-        .SYSTOLIC_ARRAY_WIDTH(SYSTOLIC_ARRAY_WIDTH)
-    ) ub_inst(
-        .clk(clk),
-        .rst(rst),
+    .status_en      (axi_status_en   ),
+    .status_we      (axi_status_we   ),
+    .status_addr    (axi_status_addr ),
+    .status_wdata   (axi_status_wdata),
+    .status_rdata   (axi_status_rdata)
+);
 
-        .ub_wr_data_in(ub_wr_data_in),
-        .ub_wr_valid_in(ub_wr_valid_in),
+logic global_en;
+logic ctrl_finish_in;
+logic finish_flag;
 
-        // Write ports from host to UB (for loading in parameters)
-        .ub_wr_host_data_in(ub_wr_host_data_in),
-        .ub_wr_host_valid_in(ub_wr_host_valid_in),
+status_reg u_status_reg (
+    .clk    (clk),
+    .rst    (rst),
+    
+    // ==================== AXI接口 ====================
+    .axi_status_en      (axi_status_en   ),
+    .axi_status_we      (axi_status_we   ),
+    .axi_status_addr    (axi_status_addr ),
+    .axi_status_wdata   (axi_status_wdata),
+    .axi_status_rdata   (axi_status_rdata),
 
-        // Read instruction input from instruction memory
-        .ub_rd_start_in(ub_rd_start_in),
-        .ub_rd_transpose(ub_rd_transpose),
-        .ub_ptr_select(ub_ptr_select),
-        .ub_rd_addr_in(ub_rd_addr_in),
-        .ub_rd_row_size(ub_rd_row_size),
-        .ub_rd_col_size(ub_rd_col_size),
+	// ==================== 控制接口 ====================
+	.ctrl_finish_in     (ctrl_finish_in),
 
-        // Learning rate input
-        .learning_rate_in(learning_rate_in),
+	// ==================== 输出接口 ====================
+    .global_en          (global_en),
+    .finish_flag        (finish_flag)
+);
 
-        // Read ports from UB to left side of systolic array
-        .ub_rd_input_data_out_0(ub_rd_input_data_out_0),
-        .ub_rd_input_data_out_1(ub_rd_input_data_out_1),
-        .ub_rd_input_valid_out_0(ub_rd_input_valid_out_0),
-        .ub_rd_input_valid_out_1(ub_rd_input_valid_out_1),
+logic               icache_rd_ctrl_en;
+logic [9:0]         icache_rd_ctrl_addr;
+logic [53:0]        icache_rd_ctrl_data;
 
-        // Read ports from UB to top of systolic array
-        .ub_rd_weight_data_out_0(ub_rd_weight_data_out_0),
-        .ub_rd_weight_data_out_1(ub_rd_weight_data_out_1),
-        .ub_rd_weight_valid_out_0(ub_rd_weight_valid_out_0),
-        .ub_rd_weight_valid_out_1(ub_rd_weight_valid_out_1),
+instruction_cache #(
+    .INS_LEN    (54)
+) u_instruction_cache (
+    .clk    (clk),
+    .rst    (rst),
 
-        // Read ports from UB to bias modules in VPU
-        .ub_rd_bias_data_out_0(ub_rd_bias_data_out_0),
-        .ub_rd_bias_data_out_1(ub_rd_bias_data_out_1),
+    // ==================== AXI 存储接口 ====================
+    .axi_icache_en      (axi_icache_en   ),
+    .axi_icache_we      (axi_icache_we   ),
+    .axi_icache_addr    (axi_icache_addr ),
+    .axi_icache_wdata   (axi_icache_wdata),
+    .axi_icache_rdata   (axi_icache_rdata),
+    
+    // ==================== 控制模块读出接口 ====================
+    .icache_rd_ctrl_en      (icache_rd_ctrl_en  ),
+    .icache_rd_ctrl_addr    (icache_rd_ctrl_addr),
+    .icache_rd_ctrl_data    (icache_rd_ctrl_data)
+);
 
-        // Read ports from UB to loss modules (Y matrices) in VPU
-        .ub_rd_Y_data_out_0(ub_rd_Y_data_out_0),
-        .ub_rd_Y_data_out_1(ub_rd_Y_data_out_1),
+// CTRL unit
+logic           ub_wr_VPU_en;
+logic [9:0]     ub_wr_VPU_addr_in;
+logic [1:0]     ub_wr_VPU_size_in;
+logic           ub_rd_input_en;
+logic [9:0]     ub_rd_input_addr_in;
+logic           ub_rd_weight_en;
+logic [1:0]     ub_rd_weight_size_in;
+logic [11:0]    ub_rd_weight_addr_in;
+logic [3:0]     ub_rd_scale_addr_in;
+logic [3:0]     ub_rd_bias_addr_in;
+logic [1:0]     ub_rd_bias_size_in;
 
-        // Read ports from UB to activation derivative modules (H matrices) in VPU
-        .ub_rd_H_data_out_0(ub_rd_H_data_out_0),
-        .ub_rd_H_data_out_1(ub_rd_H_data_out_1),
+logic           sa_input_shift_en;
+logic           sa_weight_shift_en;
 
-        // Outputs to send number of columns to systolic array
-        .ub_rd_col_size_out(ub_rd_col_size_out),
-        .ub_rd_col_size_valid_out(ub_rd_col_size_valid_out)
-    );
+logic           sa_enable [3:0];
+logic           sa_valid_in;
+logic           sa_new_weight;
+logic           sa_switch_weight;
 
-    systolic systolic_inst (
-        .clk(clk),
-        .rst(rst),
+logic [1:0]     vpu_mode_select;
+logic           vpu_psum_clear;
+logic           vpu_bias_enable;
+logic           vpu_relu_enable;
+logic           vpu_dequant_enable;
 
-        // input signals from left side of systolic array
-        .sys_data_in_11(ub_rd_input_data_out_0),
-        .sys_data_in_21(ub_rd_input_data_out_1),
-        .sys_start(ub_rd_input_valid_out_0),    // start signal
-        // .sys_start_2(ub_rd_input_valid_out_1),    // start signal propagates only from left to right in row 2
+control_unit u_control_unit(
+    .clk    (clk),
+    .rst    (rst),
+    
+    .global_en              (global_en),
+    .finish_flag            (finish_flag),
+    .icache_rd_ctrl_addr    (icache_rd_ctrl_addr),
+    .icache_rd_ctrl_en      (icache_rd_ctrl_en),
+    .icache_rd_ctrl_data    (icache_rd_ctrl_data),
 
-        .sys_data_out_21(sys_data_out_21),
-        .sys_data_out_22(sys_data_out_22),
-        .sys_valid_out_21(sys_valid_out_21), 
-        .sys_valid_out_22(sys_valid_out_22),
+    // To UB
+    .ub_wr_VPU_en           (ub_wr_VPU_en           ),
+    .ub_wr_VPU_addr_in      (ub_wr_VPU_addr_in      ),
+    .ub_wr_VPU_size_in      (ub_wr_VPU_size_in      ),
+    .ub_rd_input_en         (ub_rd_input_en         ),
+    .ub_rd_input_addr_in    (ub_rd_input_addr_in    ),
+    .ub_rd_weight_en        (ub_rd_weight_en        ),
+    .ub_rd_weight_size_in   (ub_rd_weight_size_in   ),
+    .ub_rd_weight_addr_in   (ub_rd_weight_addr_in   ),
+    .ub_rd_scale_addr_in    (ub_rd_scale_addr_in    ),
+    .ub_rd_bias_addr_in     (ub_rd_bias_addr_in     ),
+    .ub_rd_bias_size_in     (ub_rd_bias_size_in     ),
 
-        // input signals from top of systolic array
-        .sys_weight_in_11(ub_rd_weight_data_out_0), 
-        .sys_weight_in_12(ub_rd_weight_data_out_1),
-        .sys_accept_w_1(ub_rd_weight_valid_out_0),       // accept weight signal propagates only from top to bottom in column 1
-        .sys_accept_w_2(ub_rd_weight_valid_out_1),       // accept weight signal propagates only from top to bottom in column 2
+    // To input and weight rearranger
+    .sa_input_shift_en      (sa_input_shift_en      ),
+    .sa_weight_shift_en     (sa_weight_shift_en     ),
 
-        .sys_switch_in(sys_switch_in),          // switch signal copies weight from shadow buffer to active buffer. propagates from top left to bottom right
+    // To SA
+    .sa_enable              (sa_enable              ),
+    .sa_valid_in            (sa_valid_in            ),
+    .sa_new_weight          (sa_new_weight          ),
+    .sa_switch_weight       (sa_switch_weight       ),
 
-        .ub_rd_col_size_in(ub_rd_col_size_out),
-        .ub_rd_col_size_valid_in(ub_rd_col_size_valid_out)
-    );
+    // To VPU
+    .vpu_mode_select        (vpu_mode_select        ),
+    .vpu_psum_clear         (vpu_psum_clear         ),
+    .vpu_bias_enable        (vpu_bias_enable        ),
+    .vpu_relu_enable        (vpu_relu_enable        ),
+    .vpu_dequant_enable     (vpu_dequant_enable     ),
 
-    vpu vpu_inst (
-        .clk(clk),
-        .rst(rst),
+    // To status reg
+    .ctrl_finish_in         (ctrl_finish_in)
+);
 
-        .vpu_data_pathway(vpu_data_pathway), // 4-bits to signify which modules to route the inputs to (1 bit for each module)
 
-        // Inputs from systolic array
-        .vpu_data_in_1(sys_data_out_21),
-        .vpu_data_in_2(sys_data_out_22),
-        .vpu_valid_in_1(sys_valid_out_21),
-        .vpu_valid_in_2(sys_valid_out_22),
+logic [7:0]  ub_wr_VPU_data_in [3:0][15:0];
+logic [7:0]  ub_rd_input_data_out [15:0];
+logic [7:0]  ub_rd_weight_data_out [3:0][15:0];
+logic [31:0] ub_rd_scale_data_out;
+logic [31:0] ub_rd_bias_data_out [3:0][15:0];
 
-        // Inputs from UB
-        .bias_scalar_in_1(ub_rd_bias_data_out_0),               // For bias modules
-        .bias_scalar_in_2(ub_rd_bias_data_out_1),               // For bias modules
-        .lr_leak_factor_in(vpu_leak_factor_in),                 // For leaky relu modules
-        .Y_in_1(ub_rd_Y_data_out_0),                                  // For loss modules
-        .Y_in_2(ub_rd_Y_data_out_1),                                  // For loss modules
-        .inv_batch_size_times_two_in(inv_batch_size_times_two_in),             // For loss modules
-        .H_in_1(ub_rd_H_data_out_0),                                  // For leaky relu derivative modules (WE ONLY NEED THIS PORT FOR EVERY dL/dH after the first node)
-        .H_in_2(ub_rd_H_data_out_1),                                  // For leaky relu derivative modules (WE ONLY NEED THIS PORT FOR EVERY dL/dH after the first node)
+unified_buffer u_unified_buffer (
+    .clk    (clk),
+    .rst    (rst),
+    
+    // ==================== AXI接口 ====================
+    .axi_ubuf_en    (axi_ubuf_en   ),
+    .axi_ubuf_we    (axi_ubuf_we   ),
+    .axi_ubuf_addr  (axi_ubuf_addr ),
+    .axi_ubuf_wdata (axi_ubuf_wdata),
+    .axi_ubuf_rdata (axi_ubuf_rdata),
+    
+    // ==================== Input存储接口 ====================
+    // 额外写入端口
+    .ub_wr_VPU_en           (ub_wr_VPU_en     ),
+    .ub_wr_VPU_addr_in      (ub_wr_VPU_addr_in),
+    .ub_wr_VPU_size_in      (ub_wr_VPU_size_in),
+    .ub_wr_VPU_data_in      (ub_wr_VPU_data_in),
+    
+    // 读出端口
+    .ub_rd_input_en         (ub_rd_input_en      ),
+    .ub_rd_input_addr_in    (ub_rd_input_addr_in ),
+    .ub_rd_input_data_out   (ub_rd_input_data_out),
+    
+    // ==================== Weight存储接口 ====================
+    .ub_rd_weight_en        (ub_rd_weight_en      ),
+    .ub_rd_weight_size_in   (ub_rd_weight_size_in ),
+    .ub_rd_weight_addr_in   (ub_rd_weight_addr_in ),
+    .ub_rd_weight_data_out  (ub_rd_weight_data_out),
+    
+    // ==================== Misc存储接口 ====================
+    .ub_rd_scale_addr_in    (ub_rd_scale_addr_in ),
+    .ub_rd_scale_data_out   (ub_rd_scale_data_out),
+    .ub_rd_bias_addr_in     (ub_rd_bias_addr_in  ),
+    .ub_rd_bias_size_in     (ub_rd_bias_size_in  ),
+    .ub_rd_bias_data_out    (ub_rd_bias_data_out )
+);
 
-        // Outputs to UB
-        .vpu_data_out_1(vpu_data_out_1),
-        .vpu_data_out_2(vpu_data_out_2),
-        .vpu_valid_out_1(vpu_valid_out_1),
-        .vpu_valid_out_2(vpu_valid_out_2)
-    ); 
+logic [7:0]  sa_input [15:0];
+
+systolic_data_rearranger u_input_rearranger (
+    .clk    (clk),
+    .rst    (rst),
+    
+    // ==================== UBUF 接口 ====================
+    .ubuf_data_in   (ub_rd_input_data_out),
+    
+    // ==================== 脉动阵列接口 ====================
+    .SA_data_out    (sa_input),
+    
+    // ==================== 控制接口 ====================
+    .load_en        (sa_valid_in),
+    .shift_en       (sa_input_shift_en)
+);
+
+logic [7:0] sa_weight [3:0][15:0];
+
+genvar i_weight_rearranger;
+generate
+    for (i_weight_rearranger = 0; i_weight_rearranger < 4; i_weight_rearranger = i_weight_rearranger + 1) begin : gen_weight_rearranger
+            systolic_data_rearranger u_weight_rearranger (
+                    .clk    (clk),
+                    .rst    (rst),
+                    
+                    // ==================== UBUF 接口 ====================
+                    .ubuf_data_in   (ub_rd_weight_data_out[i_weight_rearranger]),
+    
+                    // ==================== 脉动阵列接口 ====================
+                    .SA_data_out    (sa_weight[i_weight_rearranger]),
+
+                    // ==================== 控制接口 ====================
+                    .load_en    (sa_new_weight),
+                    .shift_en   (sa_weight_shift_en)
+            );
+    end
+endgenerate
+
+
+logic [31:0] sa_output [3:0][15:0];
+logic sa_valid_out [3:0][15:0];
+
+
+systolic_array u_systolic_array (
+    .clk    (clk),
+    .rst    (rst),
+
+    .sa_enable      (sa_enable),
+
+    // input signals from left side of systolic array
+    .sa_input       (sa_input),
+    .sa_valid_in    (sa_valid_in),
+
+    // input signals from top of systolic array
+    .sa_weight      (sa_weight), 
+    .sa_new_weight  (sa_new_weight),
+    .sa_switch_in   (sa_switch_weight),
+
+    // output signals to the bottom of systolic array
+    .sa_output      (sa_output),
+    .sa_valid_out   (sa_valid_out)
+);
+
+// logic VPU_sa_in_valid [3:0][15:0];
+
+// genvar i_VPU_sa_in_valid;
+// generate
+//     for(i_VPU_sa_in_valid = 0; i_VPU_sa_in_valid < 4; i_VPU_sa_in_valid = i_VPU_sa_in_valid + 1) begin : sa_in_valid_format_transfer
+//         assign VPU_sa_in_valid[i_VPU_sa_in_valid] = sa_valid_out;
+//     end
+
+// endgenerate
+
+
+
+vpu #(
+    .I_WIDTH       (32),
+    .PSUM_WIDTH    (32),
+    .O_WDITH       (8),
+    .WITH_PIPE_REG (1),
+    .CHANNEL_WIDTH (16),
+    .BATCH_SIZE    (16),
+    .CHANNEL_NUM   (4)
+) u_vpu (
+    .clk    (clk),
+    .rst    (rst),
+
+    .mode_select        (vpu_mode_select),
+    .psum_clear         (vpu_psum_clear),
+    .psum_enable        (1'b1),         // TODO：暂时不支持 psum load
+    .bias_enable        (vpu_bias_enable),
+    .relu_enable        (vpu_relu_enable),
+    .dequant_enable     (vpu_dequant_enable),
+    .scale_fp32_in      (ub_rd_scale_data_out),
+
+    .psum_load_in       ('{4{ '{16{ 31'b0 }} }}), // TODO：暂时不支持 psum load
+    .bias_in            (ub_rd_bias_data_out),
+
+    .sa_in_valid        (sa_valid_out),
+    .sa_in              (sa_output),
+
+    .vpu_out_valid      (),
+    .vpu_out            (ub_wr_VPU_data_in)
+);
+
+
 endmodule

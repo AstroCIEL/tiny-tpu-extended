@@ -16,22 +16,27 @@ export PYTHONPATH := test:$(PYTHONPATH)
 
 #=============== MODIFY BELOW ======================
 # ********** IF YOU HAVE A NEW VERILOG FILE, ADD IT TO THE SOURCES VARIABLE
-SOURCES = src/pe.sv \
-          src/leaky_relu_child.sv \
-          src/leaky_relu_parent.sv \
-          src/leaky_relu_derivative_child.sv \
-          src/leaky_relu_derivative_parent.sv \
-          src/systolic.sv \
-          src/bias_child.sv \
-          src/bias_parent.sv \
-          src/fixedpoint.sv \
-          src/control_unit.sv \
-          src/unified_buffer.sv \
-          src/vpu.sv \
-          src/loss_parent.sv \
-		  src/loss_child.sv \
-		  src/tpu.sv \
-		  src/gradient_descent.sv
+SOURCES = src/ctrl_and_mem/axi_interface.sv \
+          src/ctrl_and_mem/control_unit.sv \
+          src/ctrl_and_mem/instruction_cache.sv \
+          src/ctrl_and_mem/status_reg.sv \
+          src/ctrl_and_mem/systolic_data_rearranger_FIFO.sv \
+          src/ctrl_and_mem/systolic_data_rearranger.sv \
+          src/ctrl_and_mem/unified_buffer.sv \
+          src/systolic_array/int.sv \
+          src/systolic_array/pe.sv \
+          src/systolic_array/systolic.sv \
+          src/systolic_array/systolic_array_4x16x16.sv \
+          src/vpu/vpu.sv \
+          src/vpu/pipe_register.sv \
+		  src/vpu/vpe_adder.sv \
+		  src/vpu/vpe_bias.sv \
+		  src/vpu/vpe_dequanter.sv \
+		  src/vpu/vpe_psum_cache.sv \
+		  src/vpu/vpe_relu.sv \
+		  src/vpu/vpe.sv \
+		  src/vpu/vpu_channel.sv \
+		  src/tpu.sv
 
 # MODIFY 1) variable next to -s 
 # MODIFY 2) variable next to $(SOURCES)

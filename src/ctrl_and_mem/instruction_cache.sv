@@ -37,7 +37,7 @@ always_ff @(posedge clk or posedge rst) begin
         for (int i= 0; i < 1024; i=i+1) begin
             ins_memory[i] <= 'b0;
         end
-        // $readmemb("/home/rjbao/workspace/xrun_workspace/src/tb/ins_binary.txt", ins_memory);
+        $readmemb("/home/jet/Work/tiny-tpu-extended/instruction/ins.txt", ins_memory);
     end else begin
         if (axi_icache_en && axi_icache_we) begin
             ins_memory[axi_insmem_wr_row] <= axi_icache_wdata[INS_LEN-1:0];

@@ -317,7 +317,7 @@ vpu #(
     .dequant_enable     (vpu_dequant_enable),
     .scale_fp32_in      (ub_rd_scale_data_out),
 
-    .psum_load_in       ('{4{ '{16{ 31'b0 }} }}), // TODO：暂时不支持 psum load
+    .psum_load_in       ('0), // TODO：暂时不支持 psum load
     .bias_in            (ub_rd_bias_data_out),
 
     .sa_in_valid        (sa_valid_out),

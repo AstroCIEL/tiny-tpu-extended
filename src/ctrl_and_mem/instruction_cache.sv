@@ -1,5 +1,5 @@
 module instruction_cache #(
-    INS_LEN   = 54
+    parameter INS_LEN   = 54
 ) (
     // AXI 端口
     input  logic        clk,

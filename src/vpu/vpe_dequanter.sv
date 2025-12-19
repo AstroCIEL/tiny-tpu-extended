@@ -96,13 +96,13 @@ module vpe_dequanter #(
             if (result_abs_large > (1'b1 << (O_WIDTH-1))) 
                 return MIN_NEG[O_WIDTH-1:0];
             else
-                return -signed'(result_abs_large[O_WIDTH-1:0]);
+                return -$signed(result_abs_large[O_WIDTH-1:0]);
         end 
         else begin
             if (result_abs_large > MAX_POS)
                 return MAX_POS[O_WIDTH-1:0];
             else
-                return signed'(result_abs_large[O_WIDTH-1:0]);
+                return $signed(result_abs_large[O_WIDTH-1:0]);
         end
         
     endfunction

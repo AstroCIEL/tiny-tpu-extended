@@ -154,8 +154,9 @@ endgenerate
 always_ff @(posedge clk or posedge rst) begin
     if (rst) begin
         for (int i= 0; i < 256; i=i+1) begin
-            input_memory[i] <= 512'b0;
+            input_memory[i] <= {64{8'd1}};
         end
+        //$readmemh("/home/jet/Work/tiny-tpu-extended/data/int_hex.txt", input_memory);
     end else begin
         if (axi_imem_wr_en) begin       // AXI 写入逻辑
             input_memory[axi_imem_wr_row][axi_imem_wr_inrow_offset*64 +: 64] <= axi_ubuf_wdata;

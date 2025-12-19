@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 
 // 16x16 systolic array
-module systolic #()
+module systolic
 (
     input logic clk,
     input logic rst,

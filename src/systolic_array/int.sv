@@ -1,7 +1,7 @@
 module int8_mul_int32 (
     input  wire signed [7:0]  ina,      // signed int8
     input  wire signed [7:0]  inb,      // signed int8  
-    output wire signed [31:0] out      // signed int32 result
+    output wire signed [31:0] out       // signed int32 result
 );
     // 有符号乘法：直接使用 * 运算符，Verilog 会自动进行符号扩展
     wire signed [15:0] product_16bit = ina * inb;

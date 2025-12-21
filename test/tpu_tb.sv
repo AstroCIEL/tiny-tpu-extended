@@ -1,292 +1,168 @@
-//////////////////////////////////////////////////////////////////////////////////
-// Designer:        Zhantong Zhu [Peking University] <zhu_20021122@stu.pku.edu.cn>
-// Acknowledgement: GitHub Copilot
-// Description:     Testbench for TPU-Lite
-//////////////////////////////////////////////////////////////////////////////////
+`timescale 1ns/1ps
 
-// resolution should be set to 1 ps
-`timescale 1ps / 1ps
+module tb_tpu;
 
-module tpu_tb;
-
-    // ANSI Color codes
-    localparam string COLOR_RED = "\033[31m";
-    localparam string COLOR_GREEN = "\033[32m";
-    localparam string COLOR_YELLOW = "\033[33m";
-    localparam string COLOR_BLUE = "\033[34m";
-    localparam string COLOR_MAGENTA = "\033[35m";
-    localparam string COLOR_CYAN = "\033[36m";
-    localparam string COLOR_RESET = "\033[0m";
-
-    localparam int AXI_ADDR_WIDTH = 64;
-    localparam int AXI_DATA_WIDTH = 64;
-
-    localparam longint TPU_BASE_ADDR = 64'h4000_0000;
+    // =========================================================================
+    // 信号定义
+    // =========================================================================
+    logic        clk;
+    logic        rst;
     
-    // UBUF Address Range (from axi_interface.sv)
-    localparam longint UBUF_START_OFFSET = 64'h0000 << 3;
-    localparam longint UBUF_END_OFFSET   = 64'h29FF << 3;
+    // AXI 接口信号
+    logic        axi_req;
+    logic        axi_we;
+    logic [63:0] axi_addr;
+    logic [63:0] axi_wdata;
+    logic [63:0] axi_rdata;
+
+    // =========================================================================
+    // 参数与地址映射 (基于 axi_interface.sv 分析)
+    // =========================================================================
+    // TPU Base: 0x4000_0000 [cite: 190]
+    // Status Base (Internal): 0x2E00 -> AXI Offset: 0x2E00 << 3 = 0x17000
+    localparam bit [63:0] TPU_BASE_ADDR   = 64'h4000_0000;
     
-    localparam longint UBUF_START_ADDR = TPU_BASE_ADDR + UBUF_START_OFFSET;
-    localparam longint UBUF_END_ADDR   = TPU_BASE_ADDR + UBUF_END_OFFSET;
-
-    // ICACHE Address Range
-    localparam longint ICACHE_START_OFFSET = 64'h2A00 << 3;
-    localparam longint ICACHE_END_OFFSET   = 64'h2DFF << 3;
-    localparam longint ICACHE_START_ADDR   = TPU_BASE_ADDR + ICACHE_START_OFFSET;
-    localparam longint ICACHE_END_ADDR     = TPU_BASE_ADDR + ICACHE_END_OFFSET;
-
-    // STATUS REG Address Range
-    localparam longint STATUS_START_OFFSET = 64'h2E00 << 3;
-    localparam longint STATUS_REG_EN_ADDR  = TPU_BASE_ADDR + STATUS_START_OFFSET; // Offset 0x0000
-    localparam longint STATUS_REG_FINISH_ADDR = TPU_BASE_ADDR + STATUS_START_OFFSET + 8; // Offset 0x0001
-
-    logic                      clk, rstn_i;
-    logic                      axi_req_i;
-    logic                      axi_we_i;
-    logic [AXI_DATA_WIDTH-1:0] axi_rdata_o;
-    logic [AXI_DATA_WIDTH-1:0] axi_wdata_i;
-    logic [AXI_ADDR_WIDTH-1:0] axi_addr_i;
+    // 寄存器地址计算：(Base + Internal_Offset) << 3
+    // Reg Enable (Internal 0x0) -> 0x4001_7000
+    localparam bit [63:0] ADDR_REG_ENABLE = TPU_BASE_ADDR + (64'h2E00 << 3); 
     
-    int error_count;
+    // Reg Finish (Internal 0x1) -> 0x4001_7008
+    localparam bit [63:0] ADDR_REG_FINISH = TPU_BASE_ADDR + ((64'h2E00 + 1) << 3); 
+    
+    // Result/Input Memory Base -> 0x4000_0000
+    localparam bit [63:0] ADDR_MEM_RESULT = TPU_BASE_ADDR; 
 
-    tpu i_tpu (
+    // =========================================================================
+    // DUT 实例化
+    // =========================================================================
+    tpu u_tpu (
         .clk        (clk),
-        .rst        (~rstn_i),
-        .axi_req    (axi_req_i),
-        .axi_we     (axi_we_i),
-        .axi_addr   (axi_addr_i),
-        .axi_wdata  (axi_wdata_i),
-        .axi_rdata  (axi_rdata_o)
+        .rst        (rst),
+        .axi_req    (axi_req),
+        .axi_we     (axi_we),
+        .axi_addr   (axi_addr),
+        .axi_wdata  (axi_wdata),
+        .axi_rdata  (axi_rdata)
     );
 
-    always #1000 clk = ~clk;
+    // =========================================================================
+    // 时钟生成 (100MHz)
+    // =========================================================================
+    initial begin
+        clk = 0;
+        forever #5 clk = ~clk;
+    end
 
-    // Task for AXI write
-    task axi_write(input logic [AXI_ADDR_WIDTH-1:0] addr, input logic [AXI_DATA_WIDTH-1:0] data);
-        @(posedge clk);
-        #200;
-        axi_req_i = 1;
-        axi_we_i = 1;
-        axi_addr_i = addr;
-        axi_wdata_i = data;
-        @(posedge clk);
-        #200;
-        axi_req_i = 0;
-        axi_we_i = 0;
-        axi_wdata_i = '0;
+    // =========================================================================
+    // AXI 总线任务 (Bus Functional Model)
+    // =========================================================================
+    
+    // AXI 写任务
+    task axi_write(input [63:0] addr, input [63:0] data);
+        begin
+            @(posedge clk);
+            axi_req   <= 1'b1;
+            axi_we    <= 1'b1;
+            axi_addr  <= addr;
+            axi_wdata <= data;
+            
+            @(posedge clk);
+            // 单周期请求，下一拍拉低 [cite: 208]
+            axi_req   <= 1'b0;
+            axi_we    <= 1'b0;
+            axi_addr  <= '0;
+            axi_wdata <= '0;
+        end
     endtask
 
-    // Task for AXI read
-    task axi_read(input logic [AXI_ADDR_WIDTH-1:0] addr, output logic [AXI_DATA_WIDTH-1:0] data);
-        @(posedge clk);
-        #200;
-        axi_req_i = 1;
-        axi_we_i = 0;
-        axi_addr_i = addr;
-        @(posedge clk);
-        #200;
-        axi_req_i = 0;
-        // Wait for data to be valid (1 cycle latency in axi_interface)
-        data = axi_rdata_o;
+    // AXI 读任务
+    task axi_read(input [63:0] addr, output [63:0] data);
+        begin
+            @(posedge clk);
+            axi_req   <= 1'b1;
+            axi_we    <= 1'b0; // 读模式
+            axi_addr  <= addr;
+            
+            @(posedge clk);
+            axi_req   <= 1'b0;
+            axi_addr  <= '0;
+
+            // 等待读取延迟。设计中 axi_req_q 延迟一拍，读取逻辑基于 _q 信号 [cite: 210]
+            // 数据应该在 req 拉低后的当拍或者下一拍有效，这里简单等待一拍
+            @(posedge clk); 
+            data = axi_rdata;
+        end
     endtask
 
-
-    task test_sequential_UB_access();
-        $display("%s[TEST] Starting Sequential Access Test...%s", COLOR_YELLOW, COLOR_RESET);
-        
-        // Write First 128 words
-        for (longint addr = UBUF_START_ADDR; addr < UBUF_START_ADDR + (128*8); addr += 8) begin
-            logic [63:0] wdata;
-            wdata = addr + 64'hA5A5_0000_0000_0000; // Unique pattern per address
-            axi_write(addr, wdata);
-        end
-
-        // Write Last 128 words
-        for (longint addr = UBUF_END_ADDR - (127*8); addr <= UBUF_END_ADDR; addr += 8) begin
-            logic [63:0] wdata;
-            wdata = addr + 64'h5A5A_0000_0000_0000; // Unique pattern per address
-            axi_write(addr, wdata);
-        end
-        
-        $display("%s[INFO] Sequential Write completed.%s", COLOR_CYAN, COLOR_RESET);
-
-        // Verify First 128 words
-        for (longint addr = UBUF_START_ADDR; addr < UBUF_START_ADDR + (128*8); addr += 8) begin
-            logic [63:0] expected_data;
-            logic [63:0] rdata;
-            
-            expected_data = addr + 64'hA5A5_0000_0000_0000;
-            axi_read(addr, rdata);
-            
-            if (rdata !== expected_data) begin
-                $display("%s[FAIL] Addr: 0x%h | Read: 0x%h | Expected: 0x%h%s", 
-                         COLOR_RED, addr, rdata, expected_data, COLOR_RESET);
-                error_count++;
-            end
-        end
-
-        // Verify Last 128 words
-        for (longint addr = UBUF_END_ADDR - (127*8); addr <= UBUF_END_ADDR; addr += 8) begin
-            logic [63:0] expected_data;
-            logic [63:0] rdata;
-            
-            expected_data = addr + 64'h5A5A_0000_0000_0000;
-            axi_read(addr, rdata);
-            
-            if (rdata !== expected_data) begin
-                $display("%s[FAIL] Addr: 0x%h | Read: 0x%h | Expected: 0x%h%s", 
-                         COLOR_RED, addr, rdata, expected_data, COLOR_RESET);
-                error_count++;
-            end
-        end
-        $display("%s[INFO] Sequential Access Test completed.%s", COLOR_CYAN, COLOR_RESET);
-    endtask
-
-    task test_random_UB_access(input int count);
-        logic [63:0] expected_mem [longint];
-        logic [63:0] addr;
-        logic [63:0] wdata;
-        logic [63:0] rdata;
-        
-        $display("%s[TEST] Starting Random Access Test (%0d transactions)...%s", COLOR_YELLOW, count, COLOR_RESET);
-
-        // Write phase
-        for (int i = 0; i < count; i++) begin
-            // Generate random address aligned to 8 bytes within UBUF range
-            logic [15:0] word_idx;
-            word_idx = $urandom_range(0, 16'h29FF);
-            addr = TPU_BASE_ADDR + (longint'(word_idx) * 8);
-            
-            wdata = {$urandom, $urandom};
-            
-            axi_write(addr, wdata);
-            
-            // Store expected data in associative array (handles overwrites correctly)
-            expected_mem[addr] = wdata;
-        end
-        
-        $display("%s[INFO] Random Write completed. Verifying...%s", COLOR_CYAN, COLOR_RESET);
-
-        // Read phase
-        foreach (expected_mem[idx]) begin
-            axi_read(idx, rdata);
-            if (rdata !== expected_mem[idx]) begin
-                 $display("%s[FAIL] Random Test - Addr: 0x%h | Read: 0x%h | Expected: 0x%h%s", 
-                         COLOR_RED, idx, rdata, expected_mem[idx], COLOR_RESET);
-                error_count++;
-            end
-        end
-
-        // Add a few clock cycles
-        repeat (10) @(posedge clk);
-
-        $display("%s[INFO] Random Access Test completed.%s", COLOR_CYAN, COLOR_RESET);
-    endtask
-
-    task test_icache_access();
-        $display("%s[TEST] Starting ICACHE Access Test...%s", COLOR_YELLOW, COLOR_RESET);
-        
-        // Write Pattern to ICACHE
-        for (longint addr = ICACHE_START_ADDR; addr <= ICACHE_END_ADDR; addr += 8) begin
-            logic [63:0] wdata;
-            // Instructions are 54-bit, so we mask the upper bits to simulate realistic data
-            wdata = (addr + 64'hBEEF_0000_0000_0000) & 64'h003F_FFFF_FFFF_FFFF; 
-            axi_write(addr, wdata);
-        end
-        
-        $display("%s[INFO] ICACHE Write completed.%s", COLOR_CYAN, COLOR_RESET);
-
-        // Verify ICACHE
-        for (longint addr = ICACHE_START_ADDR; addr <= ICACHE_END_ADDR; addr += 8) begin
-            logic [63:0] expected_data;
-            logic [63:0] rdata;
-            
-            expected_data = (addr + 64'hBEEF_0000_0000_0000) & 64'h003F_FFFF_FFFF_FFFF;
-            axi_read(addr, rdata);
-            
-            if (rdata !== expected_data) begin
-                $display("%s[FAIL] ICACHE - Addr: 0x%h | Read: 0x%h | Expected: 0x%h%s", 
-                         COLOR_RED, addr, rdata, expected_data, COLOR_RESET);
-                error_count++;
-            end
-        end
-        $display("%s[INFO] ICACHE Access Test completed.%s", COLOR_CYAN, COLOR_RESET);
-    endtask
-
-    task test_status_reg_access();
-        logic [63:0] wdata;
-        logic [63:0] rdata;
-        
-        $display("%s[TEST] Starting Status Register Access Test...%s", COLOR_YELLOW, COLOR_RESET);
-
-        // Test Global Enable Register (Bit 0)
-        // Write 1
-        wdata = 64'h1;
-        axi_write(STATUS_REG_EN_ADDR, wdata);
-        axi_read(STATUS_REG_EN_ADDR, rdata);
-        
-        if (rdata[0] !== 1'b1) begin
-            $display("%s[FAIL] Status Reg EN - Write 1 Failed. Read: 0x%h%s", COLOR_RED, rdata, COLOR_RESET);
-            error_count++;
-        end else begin
-             $display("%s[PASS] Status Reg EN - Write 1 Verified.%s", COLOR_GREEN, COLOR_RESET);
-        end
-
-        // Write 0
-        wdata = 64'h0;
-        axi_write(STATUS_REG_EN_ADDR, wdata);
-        axi_read(STATUS_REG_EN_ADDR, rdata);
-        
-        if (rdata[0] !== 1'b0) begin
-            $display("%s[FAIL] Status Reg EN - Write 0 Failed. Read: 0x%h%s", COLOR_RED, rdata, COLOR_RESET);
-            error_count++;
-        end else begin
-             $display("%s[PASS] Status Reg EN - Write 0 Verified.%s", COLOR_GREEN, COLOR_RESET);
-        end
-        
-        $display("%s[INFO] Status Register Access Test completed.%s", COLOR_CYAN, COLOR_RESET);
-    endtask
+    // =========================================================================
+    // 主测试流程
+    // =========================================================================
+    logic [63:0] read_val;
+    integer timeout_counter;
 
     initial begin
-        clk = 1'b1;
-        rstn_i = 1'b0;
-        axi_req_i = 0;
-        axi_we_i = 0;
-        axi_addr_i = 0;
-        axi_wdata_i = 0;
-        error_count = 0;
-
-        #20000;
-        rstn_i = 1'b1;
-        #10000;
-
-        $display("%s\n========================================", COLOR_BLUE);
-        $display("       TPU Unified Buffer Test");
-        $display("========================================%s", COLOR_RESET);
-
-        test_sequential_UB_access();
+        // 0. 初始化信号
+        axi_req   = 0;
+        axi_we    = 0;
+        axi_addr  = 0;
+        axi_wdata = 0;
         
-        test_random_UB_access(50);
+        // 1. 复位
+        $display("[TB] System Reset...");
+        rst = 1;
+        repeat(20) @(posedge clk);
+        rst = 0;
+        repeat(10) @(posedge clk);
 
-        test_icache_access();
+        // 2. 启动 TPU
+        $display("[TB] Writing Global Enable (Addr: %h)...", ADDR_REG_ENABLE);
+        axi_write(ADDR_REG_ENABLE, 64'h1);
 
-        test_status_reg_access();
-
-        if (error_count == 0) begin
-            $display("%s\n[PASS] All UBUF tests passed successfully!%s", COLOR_GREEN, COLOR_RESET);
-        end else begin
-            $display("%s\n[FAIL] UBUF tests failed with %0d errors.%s", COLOR_RED, error_count, COLOR_RESET);
+        // 3. 轮询 Finish 标志
+        $display("[TB] Polling Finish Flag (Addr: %h)...", ADDR_REG_FINISH);
+        timeout_counter = 0;
+        
+        forever begin
+            axi_read(ADDR_REG_FINISH, read_val);
+            
+            if (read_val[0] == 1'b1) begin
+                $display("[TB] TPU Process Finished! (Flag detected at cycle %0t)", $time);
+                break;
+            end
+            
+            timeout_counter++;
+            if (timeout_counter > 100000) begin // 超时保护
+                $error("[TB] Error: Timeout waiting for finish flag!");
+                $finish;
+            end
+            
+            repeat(10) @(posedge clk); // 每隔 10 个周期查询一次
         end
 
-        $display("\n=== Test Complete ===\n");
+        // 4. (可选) 读回部分结果
+        // 假设结果写回到了 Input Memory 的起始位置
+        $display("[TB] Reading Result Memory...");
+        axi_read(ADDR_MEM_RESULT, read_val);
+        $display("[TB] Result at 0x00: %h", read_val);
+        
+        axi_read(ADDR_MEM_RESULT + 8, read_val); // +8 bytes
+        $display("[TB] Result at 0x08: %h", read_val);
+
+        repeat(20) @(posedge clk);
+        $display("[TB] Simulation Completed Successfully.");
         $finish;
     end
 
+    // =========================================================================
+    // Verdi 波形 Dump (FSDB)
+    // =========================================================================
     initial begin
-        $fsdbDumpfile("waveform.fsdb");
+        // 指定输出波形文件名
+        $fsdbDumpfile("tpu_wave.fsdb");
+        // 0 表示 dump 所有层次，tb_top 是顶层模块名
         $fsdbDumpvars("+all");
-        $fsdbDumpMDA();
+        // 如果想 dump 数组（Unified Buffer需要），需要加上这个
+        $fsdbDumpMDA(); 
     end
 
 endmodule

@@ -1,48 +1,55 @@
 `timescale 1ns/1ps
 
 // 16x16 systolic array
-module systolic
+module systolic #()
 (
     input logic clk,
     input logic rst,
 
     // input signals from left side of systolic array
-    input logic [7:0] sys_input [15:0],
+    input logic signed [7:0] sys_input [15:0],
     input logic sys_valid_in,        // 只给左上角pe
 
     // input signals from top of systolic array
-    input logic [7:0] sys_weight [15:0],
+    input logic signed [7:0] sys_weight [15:0],
     input logic sys_new_weight,      // 控制最左列，向右侧传递
     input logic sys_switch_in,       // 只给左上角pe
 
-    output logic [31:0] sys_output [15:0],
+    output logic signed [31:0] sys_output [15:0],
     output logic sys_valid_out [15:0]
 );
 
-    logic [31:0] pe_psum_out [15:0][15:0];
-    logic [7:0] pe_weight_out [15:0][15:0];
-    logic [7:0] pe_input_out [15:0][15:0];
+    logic signed [31:0] pe_psum_out [15:0][15:0];
+    logic signed [7:0] pe_weight_out [15:0][15:0];
+    logic signed [7:0] pe_input_out [15:0][15:0];
     logic pe_valid_out [15:0][15:0];
     logic pe_switch_out [15:0][15:0];
     logic pe_valid_w_out [15:0][15:0];
     logic col_new_weight [15:0];
 
+    // 其他列的col_new_weight在时钟上升沿传递
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) begin
+            for (int j = 0; j < 16; j++) begin
+                col_new_weight[j] <= 1'b0;
+            end
+        end else begin
+            for (int j = 0; j < 16; j++) begin
+                col_new_weight[j] <= (j == 0) ? sys_new_weight : col_new_weight[j-1];
+            end
+        end
+    end
+
     // 生成16x16 PE阵列
     generate
         for (genvar j = 0; j < 16; j++) begin
-            if (j == 0) begin
-                assign col_new_weight[j] = sys_new_weight;
-            end
-            else begin
-                assign col_new_weight[j] = col_new_weight[j-1];
-            end
             for (genvar i = 0; i < 16; i++) begin
                 // 确定每个PE的连接
-                logic [7:0] local_input;
+                logic signed [7:0] local_input;
                 logic local_valid_in;
                 logic local_switch_in;
-                logic [31:0] local_psum;
-                logic [7:0] local_weight;
+                logic signed [31:0] local_psum;
+                logic signed [7:0] local_weight;
                 logic local_valid_w_in;
 
                 if (i == 0) begin

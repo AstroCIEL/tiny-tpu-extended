@@ -153,10 +153,10 @@ endgenerate
             
 always_ff @(posedge clk or posedge rst) begin
     if (rst) begin
-        for (int i= 0; i < 256; i=i+1) begin
-            input_memory[i] <= {64{8'd1}};
-        end
-        //$readmemh("/home/jet/Work/tiny-tpu-extended/data/int_hex.txt", input_memory);
+        // for (int i= 0; i < 256; i=i+1) begin
+        //     input_memory[i] <= 512'b0;
+        // end
+        $readmemh("/data/home/rh_xu30/work/tiny-tpu-extended/data/input_hex.txt", input_memory);
     end else begin
         if (axi_imem_wr_en) begin       // AXI 写入逻辑
             input_memory[axi_imem_wr_row][axi_imem_wr_inrow_offset*64 +: 64] <= axi_ubuf_wdata;
@@ -198,7 +198,7 @@ end
 
 genvar i_rd_input;
 generate
-    for (i_rd_input = 0; i_rd_input < 4; i_rd_input = i_rd_input+1) begin
+    for (i_rd_input = 0; i_rd_input < 16; i_rd_input = i_rd_input+1) begin
         assign ub_rd_input_data_out[15-i_rd_input] = ub_rd_input_data_out_temp[i_rd_input*8 +: 8];
     end
 endgenerate
@@ -346,8 +346,31 @@ assign axi_mmem_inrow_offset    = axi_mmem_wr_addr[4:0];
             
 always_ff @(posedge clk or posedge rst) begin
     if (rst) begin
-        for (int i= 0; i < 16; i=i+1) begin
-            misc_memory[i] <= 2048'b0;
+        // misc_memory[0] <= {
+        //     32'sd-112, 32'sd222,   32'sd147,  32'sd1439, 32'sd1406, 32'sd1535, 32'sd1490, 32'sd1498,
+        //     32'sd-401, 32'sd2347,  32'sd-16,  32'sd-187, 32'sd2549, 32'sd-176, 32'sd-90,  32'sd64,
+        //     32'sd847,  32'sd1646,  32'sd-387, 32'sd-1076,32'sd297,  32'sd1948, 32'sd481,  32'sd1328,
+        //     32'sd565,  32'sd2526,  32'sd1038, 32'sd146,  32'sd137,  32'sd867,  32'sd1590, 32'sd251,
+        //     32'sd994,  32'sd-366,  32'sd1026, 32'sd-847, 32'sd1365, 32'sd-338, 32'sd37,   32'sd153,
+        //     32'sd1201, 32'sd259,   32'sd1069, 32'sd-623, 32'sd549,  32'sd-2276,32'sd-1165,32'sd52,
+        //     32'sd440,  32'sd919,   32'sd-381, 32'sd1784, 32'sd-1259,32'sd1414, 32'sd418,  32'sd2541,
+        //     32'sd1308, 32'sd-179,  32'sd2640, 32'sd-479, 32'sd1641, 32'sd2325, 32'sd385,  32'sd1392
+        // };
+        // misc_memory[0] <= {
+        //     32'hFFFFFF90, 32'h000000DE, 32'h00000093, 32'h0000059F, 32'h0000057E, 32'h000005FF, 32'h000005D2, 32'h000005DA, // -112 to 1498
+        //     32'hFFFFFE6F, 32'h0000092B, 32'hFFFFFFF0, 32'hFFFFFE75, 32'h000009F5, 32'hFFFFFF50, 32'hFFFFFFA6, 32'h00000040, // -401 to 64
+        //     32'h0000034F, 32'h0000066E, 32'hFFFFFE7D, 32'hFFFFFBC4, 32'h00000129, 32'h0000079C, 32'h000001E1, 32'h00000530, // 847 to 1328
+        //     32'h00000235, 32'h000009DE, 32'h0000040E, 32'h00000092, 32'h00000089, 32'h00000363, 32'h00000636, 32'h000000FB, // 565 to 251
+        //     32'h000003E2, 32'hFFFFFE92, 32'h00000402, 32'hFFFFFCAF, 32'h00000555, 32'hFFFFFEB2, 32'h00000025, 32'h00000099, // 994 to 153
+        //     32'h000004B1, 32'h00000103, 32'h0000042D, 32'hFFFFFD91, 32'h00000225, 32'hFFFFF71C, 32'hFFFFFB73, 32'h00000034, // 1201 to 52
+        //     32'h000001B8, 32'h00000397, 32'hFFFFFE83, 32'h000006F8, 32'hFFFFFB15, 32'h00000586, 32'h000001A2, 32'h000009ED, // 440 to 2541
+        //     32'h0000051C, 32'hFFFFFF4D, 32'h00000A50, 32'hFFFFFE21, 32'h00000669, 32'h00000915, 32'h00000181, 32'h00000570  // 1308 to 1392
+        // };
+        misc_memory[0]<=2048'b0;
+        //misc_memory[1]<={{63{32'b0}},{32'b00111010100101110011110001110101}};
+        misc_memory[1]<={{63{32'b0}},{32'b00111010100101110011110001110101}};
+        for (int i= 2; i < 16; i=i+1) begin
+            misc_memory[i] <= {64{32'b0}};
         end
     end else begin
         if (axi_mmem_wr_en) begin

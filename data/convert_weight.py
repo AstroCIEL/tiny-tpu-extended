@@ -47,8 +47,8 @@ def convert_file_to_readmemh(input_file: str, output_file: str) -> None:
     print(f"成功写入输出文件：{len(output_lines)}行，每行{len(output_lines[0])}个十六进制字符")
 
 def main(): 
-    input_file = sys.argv[1]
-    output_file = sys.argv[2]
+    input_file = 'weight_dec.txt'
+    output_file = 'weight_hex.txt'
     
     convert_file_to_readmemh(input_file, output_file)
     print("转换完成！")

@@ -132,6 +132,7 @@ logic           vpu_psum_clear;
 logic           vpu_bias_enable;
 logic           vpu_relu_enable;
 logic           vpu_dequant_enable;
+logic           load_en;
 
 control_unit u_control_unit(
     .clk    (clk),
@@ -163,8 +164,8 @@ control_unit u_control_unit(
     // To SA
     .sa_enable              (sa_enable              ),
     .sa_valid_in            (sa_valid_in            ),
-    .sa_new_weight          (sa_new_weight          ),
-    .sa_switch_weight       (sa_switch_weight       ),
+    .sa_new_weight          (load_en          ),
+    .sa_switch_weight       (sa_new_weight       ),
 
     // To VPU
     .vpu_mode_select        (vpu_mode_select        ),
@@ -254,7 +255,7 @@ generate
                     .SA_data_out    (sa_weight[i_weight_rearranger]),
 
                     // ==================== 控制接口 ====================
-                    .load_en    (sa_new_weight),
+                    .load_en    (load_en),
                     .shift_en   (sa_weight_shift_en)
             );
     end
@@ -262,7 +263,16 @@ endgenerate
 
 
 logic [31:0] sa_output [3:0][15:0];
-logic sa_valid_out [3:0][15:0];
+logic  sa_valid_out [3:0][15:0];
+
+always_ff @(posedge clk or posedge rst) begin
+    if (rst) begin
+        sa_switch_weight <= 0;
+    end
+    else begin
+        sa_switch_weight <= sa_new_weight;
+    end
+end
 
 
 systolic_array u_systolic_array (
@@ -294,7 +304,23 @@ systolic_array u_systolic_array (
 //     end
 
 // endgenerate
-
+logic  sa_valid_out_reg [3:0][15:0];
+always_ff @(posedge clk or posedge rst) begin
+    if (rst) begin
+        for (int i =0; i<4;i=i+1) begin
+            for (int j=0;j<16;j=j+1) begin
+                sa_valid_out_reg[i][j] <= 0;
+            end
+        end
+    end
+    else begin
+        for (int i =0; i<4;i=i+1) begin
+            for (int j=0;j<16;j=j+1) begin
+                sa_valid_out_reg[i][j] <= sa_valid_out[i][j];
+            end
+        end
+    end
+end
 
 
 vpu #(

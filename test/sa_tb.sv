@@ -61,7 +61,7 @@ module tb_systolic_array;
         // 初始化第一组权重
         for (int i = 0; i < 16; i++) begin
             for (int j = 0; j < 16; j++) begin
-                weight_matrix_1[i][j] = i + j + 1;
+                weight_matrix_1[i][j] = i + 2*j + 1;
             end
         end
         

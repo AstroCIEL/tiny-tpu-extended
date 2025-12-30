@@ -66,6 +66,7 @@ logic [11:0]    ins_weight_rd_addr;
 logic [3:0]     ins_bias_rd_addr;
 logic [3:0]     ins_scale_rd_addr;
 logic [1:0]     ins_sa_en_size;
+logic [1:0]     ins_VPU_en_size;
 logic           ins_sa_weight_valid;
 logic           ins_sa_switch_weight;
 logic           ins_sa_input_valid;

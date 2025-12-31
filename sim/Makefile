@@ -1,5 +1,5 @@
 # ==============================================================================
-# 工具定义
+# tpu第一层mlp数据计算示例
 # ==============================================================================
 VCS     = vcs
 VERDI   = verdi
@@ -14,7 +14,11 @@ SIMV    = ./simv
 # -kdb             : 生成 Knowledge Database (Verdi 需要)
 # -timescale       : 设置默认时间精度
 # -l <log>         : 指定日志文件
+
+# +define+LOAD_TXT是让仿真时将相关寄存器初始化为mlp第一层的数据
 VCS_FLAGS = -full64 -sverilog -debug_access+all -kdb -timescale=1ns/1ps -l comp.log +define+LOAD_TXT
+# 如何想正常将所有寄存器初始化成0，则使用
+# VCS_FLAGS = -full64 -sverilog -debug_access+all -kdb -timescale=1ns/1ps -l comp.log
 
 # 仿真运行时的选项
 SIM_FLAGS = -l sim.log

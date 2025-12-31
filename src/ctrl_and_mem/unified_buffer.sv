@@ -153,10 +153,13 @@ endgenerate
             
 always_ff @(posedge clk or posedge rst) begin
     if (rst) begin
-        // for (int i= 0; i < 256; i=i+1) begin
-        //     input_memory[i] <= 512'b0;
-        // end
-        $readmemh("/data/home/rh_xu30/work/tiny-tpu-extended/data/input_hex.txt", input_memory);
+        `ifdef LOAD_TXT
+            $readmemh("../data/input_hex.txt", input_memory);
+        `else
+            for (int i= 0; i < 256; i=i+1) begin
+                input_memory[i] <= 512'b0;
+            end
+        `endif
     end else begin
         if (axi_imem_wr_en) begin       // AXI 写入逻辑
             input_memory[axi_imem_wr_row][axi_imem_wr_inrow_offset*64 +: 64] <= axi_ubuf_wdata;
@@ -267,10 +270,13 @@ assign axi_wmem_inrow_offset    = axi_wmem_wr_addr[2:0];
             
 always_ff @(posedge clk or posedge rst) begin
     if (rst) begin
-        // for (int i= 0; i < 1024; i=i+1) begin
-        //     weight_memory[i] <= 512'b0;
-        // end
-        $readmemh("/data/home/rh_xu30/work/tiny-tpu-extended/data/weight_hex.txt", weight_memory);
+        `ifdef LOAD_TXT
+            $readmemh("../data/weight_hex.txt", weight_memory);
+        `else
+            for (int i= 0; i < 1024; i=i+1) begin
+                weight_memory[i] <= 512'b0;
+            end
+        `endif
     end else begin
         if (axi_ubuf_en && axi_ubuf_we && axi_wmem_wr_en) begin
             weight_memory[axi_wmem_wr_row][axi_wmem_inrow_offset*64 +: 64] <= axi_ubuf_wdata;
@@ -346,29 +352,32 @@ assign axi_mmem_inrow_offset    = axi_mmem_wr_addr[4:0];
             
 always_ff @(posedge clk or posedge rst) begin
     if (rst) begin
-        // misc_memory[0] <= {
-        //     32'sd-112, 32'sd222,   32'sd147,  32'sd1439, 32'sd1406, 32'sd1535, 32'sd1490, 32'sd1498,
-        //     32'sd-401, 32'sd2347,  32'sd-16,  32'sd-187, 32'sd2549, 32'sd-176, 32'sd-90,  32'sd64,
-        //     32'sd847,  32'sd1646,  32'sd-387, 32'sd-1076,32'sd297,  32'sd1948, 32'sd481,  32'sd1328,
-        //     32'sd565,  32'sd2526,  32'sd1038, 32'sd146,  32'sd137,  32'sd867,  32'sd1590, 32'sd251,
-        //     32'sd994,  32'sd-366,  32'sd1026, 32'sd-847, 32'sd1365, 32'sd-338, 32'sd37,   32'sd153,
-        //     32'sd1201, 32'sd259,   32'sd1069, 32'sd-623, 32'sd549,  32'sd-2276,32'sd-1165,32'sd52,
-        //     32'sd440,  32'sd919,   32'sd-381, 32'sd1784, 32'sd-1259,32'sd1414, 32'sd418,  32'sd2541,
-        //     32'sd1308, 32'sd-179,  32'sd2640, 32'sd-479, 32'sd1641, 32'sd2325, 32'sd385,  32'sd1392
-        // };
-        misc_memory[0] <= {
-            32'h000001b8, 32'h00000397, 32'hfffffe83, 32'h000006f8, 32'hfffffb15, 32'h00000586, 32'h000001a2, 32'h000009ed,
-            32'h0000051c, 32'hffffff4d, 32'h00000a50, 32'hfffffe21, 32'h00000669, 32'h00000915, 32'h00000181, 32'h00000570,
-            32'h000003e2, 32'hfffffe92, 32'h00000402, 32'hfffffcb1, 32'h00000555, 32'hfffffeae, 32'h00000025, 32'h00000099,
-            32'h000004b1, 32'h00000103, 32'h0000042d, 32'hfffffd91, 32'h00000225, 32'hfffff71c, 32'hfffffb73, 32'h00000034,
-            32'h0000034f, 32'h0000066e, 32'hfffffe7d, 32'hfffffbcc, 32'h00000129, 32'h0000079c, 32'h000001e1, 32'h00000530,
-            32'h00000235, 32'h000009de, 32'h0000040e, 32'h00000092, 32'h00000089, 32'h00000363, 32'h00000636, 32'h000000fb,
-            32'hffffff90, 32'h000000de, 32'h00000093, 32'h0000059f, 32'h0000057e, 32'h000005ff, 32'h000005d2, 32'h000005da,
-            32'hfffffe6f, 32'h0000092b, 32'hfffffff0, 32'hffffff45, 32'h000009f5, 32'hffffff50, 32'hffffffa6, 32'h00000040
-        };
-        // misc_memory[0]<=2048'b0;
-        //misc_memory[1]<={{63{32'b0}},{32'b00111010100101110011110001110101}};
-        misc_memory[1]<={{63{32'b0}},{32'b00111010100101110011110001110101}};
+        `ifdef LOAD_TXT
+            // misc_memory[0] <= {
+            //     32'sd-112, 32'sd222,   32'sd147,  32'sd1439, 32'sd1406, 32'sd1535, 32'sd1490, 32'sd1498,
+            //     32'sd-401, 32'sd2347,  32'sd-16,  32'sd-187, 32'sd2549, 32'sd-176, 32'sd-90,  32'sd64,
+            //     32'sd847,  32'sd1646,  32'sd-387, 32'sd-1076,32'sd297,  32'sd1948, 32'sd481,  32'sd1328,
+            //     32'sd565,  32'sd2526,  32'sd1038, 32'sd146,  32'sd137,  32'sd867,  32'sd1590, 32'sd251,
+            //     32'sd994,  32'sd-366,  32'sd1026, 32'sd-847, 32'sd1365, 32'sd-338, 32'sd37,   32'sd153,
+            //     32'sd1201, 32'sd259,   32'sd1069, 32'sd-623, 32'sd549,  32'sd-2276,32'sd-1165,32'sd52,
+            //     32'sd440,  32'sd919,   32'sd-381, 32'sd1784, 32'sd-1259,32'sd1414, 32'sd418,  32'sd2541,
+            //     32'sd1308, 32'sd-179,  32'sd2640, 32'sd-479, 32'sd1641, 32'sd2325, 32'sd385,  32'sd1392
+            // };
+            misc_memory[0] <= {
+                32'h000001b8, 32'h00000397, 32'hfffffe83, 32'h000006f8, 32'hfffffb15, 32'h00000586, 32'h000001a2, 32'h000009ed,
+                32'h0000051c, 32'hffffff4d, 32'h00000a50, 32'hfffffe21, 32'h00000669, 32'h00000915, 32'h00000181, 32'h00000570,
+                32'h000003e2, 32'hfffffe92, 32'h00000402, 32'hfffffcb1, 32'h00000555, 32'hfffffeae, 32'h00000025, 32'h00000099,
+                32'h000004b1, 32'h00000103, 32'h0000042d, 32'hfffffd91, 32'h00000225, 32'hfffff71c, 32'hfffffb73, 32'h00000034,
+                32'h0000034f, 32'h0000066e, 32'hfffffe7d, 32'hfffffbcc, 32'h00000129, 32'h0000079c, 32'h000001e1, 32'h00000530,
+                32'h00000235, 32'h000009de, 32'h0000040e, 32'h00000092, 32'h00000089, 32'h00000363, 32'h00000636, 32'h000000fb,
+                32'hffffff90, 32'h000000de, 32'h00000093, 32'h0000059f, 32'h0000057e, 32'h000005ff, 32'h000005d2, 32'h000005da,
+                32'hfffffe6f, 32'h0000092b, 32'hfffffff0, 32'hffffff45, 32'h000009f5, 32'hffffff50, 32'hffffffa6, 32'h00000040
+            };
+            misc_memory[1]<={{63{32'b0}},{32'b00111010100101110011110001110101}};
+        `else
+            misc_memory[0]<=2048'b0;
+            misc_memory[1]<={{63{32'b0}},{32'b00111010100101110011110001110101}};
+        `endif
         for (int i= 2; i < 16; i=i+1) begin
             misc_memory[i] <= {64{32'b0}};
         end

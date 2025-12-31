@@ -14,7 +14,7 @@ SIMV    = ./simv
 # -kdb             : 生成 Knowledge Database (Verdi 需要)
 # -timescale       : 设置默认时间精度
 # -l <log>         : 指定日志文件
-VCS_FLAGS = -full64 -sverilog -debug_access+all -kdb -timescale=1ns/1ps -l comp.log
+VCS_FLAGS = -full64 -sverilog -debug_access+all -kdb -timescale=1ns/1ps -l comp.log +define+LOAD_TXT
 
 # 仿真运行时的选项
 SIM_FLAGS = -l sim.log
